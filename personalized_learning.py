@@ -1,141 +1,165 @@
+# ================================
+# INTELLIA – OFFLINE MODEL TRAINING
+# ================================
+
+# --- STEP 0: INSTALL DEPENDENCIES ---
+!pip install sdv joblib --quiet
+
 import pandas as pd
 import numpy as np
+import joblib
+import zipfile
+import os
 
+from google.colab import files
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-
+from sklearn.preprocessing import StandardScaler
 from sdv.single_table import TVAESynthesizer
 from sdv.metadata import Metadata
 
-# -----------------------------
-# STEP 1: LOAD DATA (LOCAL FILE)
-# -----------------------------
-# Make sure this file exists in your repo
-INPUT_FILE = "FINAL_COGNITIVE_DATASET (3).csv"
 
-df_raw = pd.read_csv(INPUT_FILE)
+# ================================
+# STEP 1: LOAD RAW DATA
+# ================================
 
-print("Loaded dataset shape:", df_raw.shape)
+print("Upload raw cognitive dataset (CSV)")
+uploaded = files.upload()
+file_name = list(uploaded.keys())[0]
+df_raw = pd.read_csv(file_name)
 
-# -----------------------------
-# STEP 2: DATA CLEANING
-# -----------------------------
+
+# ================================
+# STEP 2: CLEANING & DIRECTION FIX
+# ================================
+
 cols_to_remove = [
     'ParticipantName', 'attention_RTCon', 'attention_RTInc',
-    'tca_RepeatTrials', 'tca_SwitchTrials', 'tca_Congruent',
-    'tca_Incongruent', 'lra_NumErrors', 'lra_PercErrors',
-    'lra_NumPers', 'lra_NumNonPers', 'ra_PercCorrect'
+    'tca_RepeatTrials', 'tca_SwitchTrials',
+    'tca_Congruent', 'tca_Incongruent',
+    'lra_NumErrors', 'lra_PercErrors',
+    'lra_NumPers', 'lra_NumNonPers'
 ]
 
+lower_is_better = [
+    'attention_FlankerEffect',
+    'tca_overall', 'tca_SwitchCost', 'tca_TaskInterference',
+    'ipa_simpleRT', 'ipa_choiceRT',
+    'lra_PercPers', 'lra_PercNonPers',
+    'ra_RTCorrect'
+]
+
+df_raw[lower_is_better] = -df_raw[lower_is_better]
+
 df_cleaned = df_raw.drop(
-    columns=[c for c in cols_to_remove if c in df_raw.columns],
-    errors="ignore"
+    columns=[c for c in cols_to_remove if c in df_raw.columns]
 )
 
-df_cleaned = df_cleaned.fillna(df_cleaned.median(numeric_only=True))
+df_cleaned = df_cleaned.fillna(
+    df_cleaned.median(numeric_only=True)
+)
 
-print("Cleaned dataset shape:", df_cleaned.shape)
 
-# -----------------------------
-# STEP 3: TVAE SYNTHESIS
-# -----------------------------
-print("Running TVAE synthesis...")
+# ================================
+# STEP 3: SYNTHETIC DATA (TVAE)
+# ================================
 
+print("Synthesizing data...")
 metadata = Metadata.detect_from_dataframe(
     data=df_cleaned,
-    table_name="cognitive_data"
+    table_name='cognitive_data'
 )
 
 tvae = TVAESynthesizer(metadata, epochs=1000)
 tvae.fit(df_cleaned)
+df_synth = tvae.sample(num_rows=7500)
 
-synthetic_data = tvae.sample(num_rows=7500)
+df_master = pd.concat(
+    [df_cleaned, df_synth],
+    ignore_index=True
+)
 
-df_master = pd.concat([df_cleaned, synthetic_data], ignore_index=True)
 
-print("Master dataset shape:", df_master.shape)
+# ================================
+# STEP 4: PILLAR TRAINING FUNCTION
+# ================================
 
-# -----------------------------
-# STEP 4: PILLAR GENERATION
-# -----------------------------
-def get_locked_pillar(df, cols, name):
-    existing_cols = [c for c in cols if c in df.columns]
-    if not existing_cols:
-        raise ValueError(f"No valid columns found for pillar: {name}")
+def train_pillar(df, cols, name):
+    print(f"\nTraining pillar: {name}")
+
+    X = df[cols]
+    scaler = StandardScaler()
+    Xs = scaler.fit_transform(X)
 
     pca = PCA(n_components=1)
-    scaled = StandardScaler().fit_transform(df[existing_cols])
-    df[name] = pca.fit_transform(scaled)
+    pc_scores = pca.fit_transform(Xs).flatten()
 
-    if df[existing_cols].corrwith(df[name]).mean() < 0:
-        df[name] *= -1
+    # Percentile reference
+    pc_sorted = np.sort(pc_scores)
 
-    return df
+    # Save artifacts
+    joblib.dump(scaler, f"{name}_scaler.pkl")
+    joblib.dump(pca, f"{name}_pca.pkl")
+    joblib.dump(pc_sorted, f"{name}_pc_reference.pkl")
 
-print("Generating cognitive pillars...")
+    # Zip artifacts
+    zip_name = f"{name}_artifacts.zip"
+    with zipfile.ZipFile(zip_name, "w") as z:
+        z.write(f"{name}_scaler.pkl")
+        z.write(f"{name}_pca.pkl")
+        z.write(f"{name}_pc_reference.pkl")
 
-df_master = get_locked_pillar(
+    files.download(zip_name)
+
+    # Cleanup
+    os.remove(f"{name}_scaler.pkl")
+    os.remove(f"{name}_pca.pkl")
+    os.remove(f"{name}_pc_reference.pkl")
+
+
+# ================================
+# STEP 5: TRAIN ALL 6 PILLARS
+# ================================
+
+train_pillar(
     df_master,
     ['tca_overall', 'tca_SwitchCost', 'tca_TaskInterference'],
-    'Thinking conversion'
+    'thinking_conversion'
 )
 
-df_master = get_locked_pillar(
+train_pillar(
     df_master,
     ['ipa_simpleRT', 'ipa_choiceRT'],
-    'Information processing ability'
+    'information_processing_ability'
 )
 
-df_master = get_locked_pillar(
+train_pillar(
     df_master,
     ['lra_PercPers', 'lra_PercNonPers'],
-    'logical reasoning'
+    'logical_reasoning'
 )
 
-df_master = get_locked_pillar(
+train_pillar(
     df_master,
     ['attention_FlankerEffect'],
-    'Attention'
+    'attention'
 )
 
-df_master = get_locked_pillar(
+train_pillar(
     df_master,
-    ['ra_RTCorrect'],
-    'representational ability'
+    ['ra_RTCorrect', 'ra_PercCorrect'],
+    'representational_ability'
 )
 
-df_master = get_locked_pillar(
+train_pillar(
     df_master,
     ['ma_DigitSpan'],
     'memory'
 )
 
-# -----------------------------
-# STEP 5: FINAL DATASET
-# -----------------------------
-pillar_cols = [
-    'Attention',
-    'Thinking conversion',
-    'Information processing ability',
-    'logical reasoning',
-    'representational ability',
-    'memory'
-]
 
-df_final = df_master[pillar_cols].copy()
+# ================================
+# DONE
+# ================================
 
-scaler = MinMaxScaler()
-df_final[pillar_cols] = scaler.fit_transform(df_final[pillar_cols])
-
-# -----------------------------
-# STEP 6: SAVE OUTPUT
-# -----------------------------
-OUTPUT_FILE = "FINAL_6_COL_LOCKED_DATASET.csv"
-df_final.to_csv(OUTPUT_FILE, index=False)
-
-print("=" * 45)
-print("FINAL DATASET CREATED SUCCESSFULLY")
-print("Rows:", len(df_final))
-print("Columns:", pillar_cols)
-print("Saved as:", OUTPUT_FILE)
-print("=" * 45)
+print("\nALL MODELS TRAINED AND DOWNLOADED.")
+print("Use the ZIP files directly in app.py /models/")
