@@ -1,115 +1,155 @@
+# Intellia – Cognitive-Adaptive Learning System
 
-These files are REQUIRED for runtime inference.
+Intellia is a system that measures **how a student thinks** and adapts learning content accordingly.
+
+It converts raw cognitive test scores into cognitive ability profiles and uses those profiles to personalize text and audio learning content.
 
 ---
 
-## 8. Online Runtime (app.py)
+## How the System Works (High Level)
 
-📍 Runs locally or on server  
-📍 This is what users interact with
+Intellia works in **two separate stages**:
 
-### Runtime flow
-1. User enters cognitive test scores
-2. Scores are preprocessed (direction fixed again)
-3. PCA models compute pillar scores
+1. **Offline model training** (Google Colab)
+2. **Online inference & content adaptation** (Streamlit app)
+
+These stages are intentionally separated.
+
+---
+
+## 1. Offline Training (dataset_pca.ipynb)
+
+**Purpose:**  
+Train cognitive measurement models.
+
+**What happens here:**
+- Load historical cognitive test data (CSV)
+- Clean data and fix score direction (higher = better)
+- Generate synthetic data using TVAE (to stabilize patterns)
+- Train PCA models for each cognitive ability
+- Save trained model artifacts (`.pkl` files)
+
+**Important:**
+- No users involved
+- No predictions
+- No content generation
+- Runs rarely (only when data or logic changes)
+
+**Output (per cognitive pillar):**
+- `<pillar>_scaler.pkl`
+- `<pillar>_pca.pkl`
+- `<pillar>_pc_reference.pkl`
+
+These files are used later by the app.
+
+---
+
+## 2. Online Runtime (app.py)
+
+**Purpose:**  
+Score students and adapt learning content in real time.
+
+**Runtime flow:**
+1. Student enters cognitive test scores
+2. Scores are preprocessed
+3. Pretrained PCA models compute cognitive scores
 4. Scores are converted to percentiles (0–1)
-5. Percentiles are mapped to cognitive levels
-6. Content is adapted using rules
-7. AI generates personalized output
+5. Percentiles are mapped to ability levels
+6. Adaptation rules generate teaching instructions
+7. AI rewrites learning content accordingly
 
-No training happens here.
+**No training happens here.**
 
 ---
 
-## 9. adaptation_rules.py (Critical File)
+## Cognitive Abilities (Pillars)
 
-This file contains **teaching logic**, not ML.
+Each student is measured on **six independent abilities**:
 
-It answers:
-- How should content change if memory is low?
-- How complex should language be if processing speed is low?
-- How much reasoning depth is appropriate?
+1. Attention  
+2. Thinking Conversion  
+3. Information Processing Ability  
+4. Logical Reasoning  
+5. Representational Ability  
+6. Memory  
+
+Each pillar produces a score between `0.0 – 1.0`.
+
+---
+
+## Why PCA Is Used
+
+PCA is used as a **measurement tool**, not a prediction model.
+
+It:
+- Combines related test metrics
+- Reduces noise
+- Produces one stable score per ability
+
+No labels. No supervision.
+
+---
+
+## Why Synthetic Data Exists
+
+The real dataset is small.
+
+Synthetic data (TVAE):
+- Preserves real relationships
+- Stabilizes PCA training
+- Is **only used during training**
+
+Synthetic data is **never used at runtime**.
+
+---
+
+## adaptation_rules.py
+
+This file contains **teaching logic**, not machine learning.
+
+It defines:
+- How language complexity changes
+- How repetition is added
+- How reasoning depth is adjusted
 
 Rules are:
-- deterministic
-- explainable
-- easy to audit
-
-Do NOT replace this with ML unless you know exactly why.
+- Deterministic
+- Explainable
+- Easy to modify
 
 ---
 
-## 10. AI Usage (What It Actually Does)
+## What This Project Is NOT
 
-AI is used ONLY for:
-- rewriting content
-- generating explanations
-- producing podcasts
-
-AI does NOT:
-- score students
-- decide abilities
-- classify cognition
-
-AI obeys rules set by the cognitive profile.
+- Not a grading system
+- Not an intelligence predictor
+- Not a black-box AI
+- Not supervised learning
 
 ---
 
-## 11. Cognitive Index (Optional)
+## Key Rule for Contributors
 
-There is an optional composite score (CI).
+**Never mix these layers:**
+- Measurement (PCA models)
+- Teaching strategy (rules)
+- Content generation (AI)
 
-- Derived AFTER pillar scoring
-- Used for analytics or research
-- NOT required for adaptation
-- Never drives decisions directly
-
----
-
-## 12. What NOT to Do (Hard Rules)
-
-❌ Do NOT retrain models inside app.py  
-❌ Do NOT use supervised learning  
-❌ Do NOT hardcode thresholds inside PCA logic  
-❌ Do NOT mix training and inference  
-❌ Do NOT guess cognitive meaning from AI output  
-
-If you break these, the system becomes unreliable.
+If they mix, the system breaks.
 
 ---
 
-## 13. Mental Model (If You Remember One Thing)
+## Typical Setup
 
-Intellia is:
-
-> A measuring system + teaching rules + AI writing engine
-
-NOT:
-
-> A prediction model or black-box AI
+1. Run `dataset_pca.ipynb` in Google Colab
+2. Download model artifact ZIP files
+3. Place extracted `.pkl` files in `/models`
+4. Run `app.py`
 
 ---
 
-## 14. Where to Start as a New Contributor
+## One-Line Summary
 
-Recommended order:
-1. Read this file
-2. Understand dataset_pca.ipynb
-3. Trace app.py from input → output
-4. Read adaptation_rules.py
-5. Only then touch logic
+Intellia measures how students think and uses that information to automatically adapt how learning content is explained.
 
 ---
-
-## 15. Final Reality Check
-
-If you change something, ask:
-- Does this affect measurement?
-- Does this affect teaching strategy?
-- Does this affect content generation?
-
-Never mix the three.
-
----
-
-END OF DOCUMENT
