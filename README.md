@@ -1,109 +1,155 @@
-# Personalized Learning Model – Cognitive Dataset Generation
+# 🧠 Intellia – Cognitive Model Training (Google Colab)
 
-## Overview
-This project focuses on personalized learning by processing learner-related data to generate a structured cognitive profile. The system transforms raw learner inputs into a final 6-column cognitive dataset that captures key cognitive abilities required for adaptive and personalized content delivery.
+This notebook is used to **train the cognitive scoring models** that power Intellia.
 
-The generated dataset serves as the **input foundation for a second-stage model**, where personalized educational content is generated based on the learner’s cognitive profile.
+In simple terms:  
+👉 it teaches the system **how to measure how a person thinks**, using cognitive test data.
 
----
+The models trained here are later used by the live app (`app.py`) to score students and adapt learning content for them.
 
-## Objective
-The primary goal of this project is to:
-- Analyze learner data
-- Derive standardized cognitive indicators
-- Produce a clean, locked, and structured cognitive dataset
-- Enable downstream content generation and adaptive learning systems
+This notebook is **offline**.  
+You do **not** run it for every user.
 
 ---
 
-## Cognitive Dimensions Generated
-The final dataset contains **six core cognitive attributes**, representing different aspects of learner capability:
+## 🧩 What Problem This Solves
 
-1. **Attention**  
-2. **Thinking Conversion**  
-3. **Information Processing Ability**  
-4. **Logical Reasoning**  
-5. **Representational Ability**  
+Cognitive test data is messy.
+
+- Some tests are “higher is better”
+- Some are “lower is better”
+- Some abilities depend on **multiple test values**
+- Real datasets are usually **small and noisy**
+
+This notebook solves all of that by:
+- Cleaning and normalizing the data
+- Standardizing score direction
+- Combining related test metrics into a single ability score
+- Making the scoring system stable and reusable
+
+The output is a set of **trained measurement models**, not predictions.
+
+---
+
+## 🧠 What the System Learns
+
+The notebook trains models for **six cognitive abilities (pillars)**:
+
+1. **Attention**
+2. **Thinking Conversion**
+3. **Information Processing Ability**
+4. **Logical Reasoning**
+5. **Representational Ability**
 6. **Memory**
 
-Each row represents an individual learner profile encoded numerically across these six dimensions.
+Each ability is learned **independently**.
+
+That means:
+- Each pillar has its own scaler
+- Its own PCA model
+- Its own reference distribution
+
+This keeps the system modular and explainable.
 
 ---
 
-## Dataset
-### Input
-- Raw learner data capturing behavioral, cognitive, or performance-related signals
+## 📂 Input: What You Need to Run This
 
-### Output
-- Final generated dataset:  
-  **`FINAL_6_COL_LOCKED_DATASET.csv`**
+### Required
+- One CSV file containing historical cognitive test scores
 
-This dataset is normalized, validated, and locked to ensure consistency and reliability when used by downstream models.
+### Expected data format
+The CSV should include columns such as:
 
----
+- `tca_overall`, `tca_SwitchCost`, `tca_TaskInterference`
+- `ipa_simpleRT`, `ipa_choiceRT`
+- `attention_FlankerEffect`
+- `lra_PercPers`, `lra_PercNonPers`
+- `ra_RTCorrect`, `ra_PercCorrect`
+- `ma_DigitSpan`
 
-## Methodology
-1. Load and validate raw learner dataset  
-2. Feature extraction and transformation  
-3. Cognitive pillar computation  
-4. Data normalization and consistency checks  
-5. Generation of final 6-column cognitive dataset  
-6. Export of dataset for reuse in content generation models  
+Not every column is used directly, but they should be present if the pillar depends on them.
 
 ---
 
-## Role in Multi-Model Pipeline
-This project represents **Stage 1** of a multi-model system:
+## ⚙️ What Happens Inside the Notebook (Step by Step)
 
-- **Stage 1 – Personalized Learning Model (this project):**  
-  Generates a structured cognitive profile for each learner.
+### 1️⃣ Load the Dataset
+You upload a CSV file containing raw cognitive test data collected from users.
 
-- **Stage 2 – Adaptive Content Generation Model:**  
-  Uses the 6-column cognitive dataset to dynamically generate personalized learning content, difficulty levels, and presentation styles.
-
-This separation ensures modularity, scalability, and reusability of learner intelligence across systems.
+This data is assumed to be **real human test data**.
 
 ---
 
-## Technologies Used
-- Python  
-- Pandas  
-- NumPy  
+### 2️⃣ Clean the Data
+The notebook:
+- Removes columns that are not needed
+- Fills missing numeric values using the column median
+- Makes sure the dataset is consistent and usable
+
+This step prevents garbage input from breaking the models.
 
 ---
 
-## How to Run the Project
+### 3️⃣ Fix Score Direction (“Higher = Better”)
+Not all cognitive tests work the same way.
 
-1. Install required dependencies:
+Some scores mean:
+- **higher = better** (e.g., accuracy)
+- **lower = better** (e.g., reaction time)
 
-pip install -r requirements.txt
+To avoid confusion later, the notebook **inverts all “lower is better” columns** so that:
 
+> Across the entire system, higher values always mean better performance.
 
-2. Run the script:
-
-
-
-3. Output:
-- The final 6-column cognitive dataset is generated and saved as:
-
-
+This is critical for PCA and percentile scoring to behave correctly.
 
 ---
 
-## Output Summary
-- Clean, structured learner cognitive profiles
-- Standardized numerical representation of learner abilities
-- Dataset ready for content generation and adaptive learning models
+### 4️⃣ Generate Synthetic Data (TVAE)
+Real cognitive datasets are often small.
+
+To stabilize learning:
+- A TVAE (Tabular Variational Autoencoder) is trained
+- ~7,500 synthetic samples are generated
+- Synthetic data is merged with real data
+
+This does **not fake users**.  
+It simply helps the model understand the overall structure of the data better.
 
 ---
 
-## Applications
-- Personalized and adaptive learning systems  
-- AI-driven content generation  
-- Cognitive profiling for education platforms  
-- Learner-centered curriculum design  
+### 5️⃣ Train the Cognitive Pillars
+For each cognitive ability:
+
+1. Relevant columns are selected
+2. Features are standardized using `StandardScaler`
+3. PCA is applied with **1 principal component**
+4. PCA scores are collected
+5. A sorted reference distribution is created
+
+PCA is used here to:
+- Combine related test scores
+- Reduce noise
+- Produce a clean, single cognitive score per ability
 
 ---
 
-## Author
-Ambica Natraj
+### 6️⃣ Export Model Artifacts
+For each pillar, the notebook saves:
+
+- `<pillar>_scaler.pkl`  
+- `<pillar>_pca.pkl`  
+- `<pillar>_pc_reference.pkl`  
+
+These three files are bundled into a ZIP file and automatically downloaded.
+
+Each ZIP is fully self-contained.
+
+---
+
+## 📦 Output: What You Get
+
+After running the notebook, you will have **six ZIP files**, one for each pillar.
+
+Example:
