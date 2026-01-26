@@ -5,6 +5,13 @@ Intellia is a system that measures **how a student thinks** and adapts learning 
 It converts raw cognitive test scores into cognitive ability profiles and uses those profiles to personalize text and audio learning content.
 
 ---
+intellia/
+├── train_models.py
+├── app.py
+├── adaptation_rules.py
+├── requirements.txt
+├── README.md
+└── models/
 
 ## How the System Works (High Level)
 
