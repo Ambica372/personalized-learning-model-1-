@@ -1,155 +1,115 @@
-# 🧠 Intellia – Cognitive Model Training 
 
-This notebook is used to **train the cognitive scoring models** that power Intellia.
-
-In simple terms:  
-👉 it teaches the system **how to measure how a person thinks**, using cognitive test data.
-
-The models trained here are later used by the live app (`app.py`) to score students and adapt learning content for them.
-
-This notebook is **offline**.  
-You do **not** run it for every user.
+These files are REQUIRED for runtime inference.
 
 ---
 
-## 🧩 What Problem This Solves
+## 8. Online Runtime (app.py)
 
-Cognitive test data is messy.
+📍 Runs locally or on server  
+📍 This is what users interact with
 
-- Some tests are “higher is better”
-- Some are “lower is better”
-- Some abilities depend on **multiple test values**
-- Real datasets are usually **small and noisy**
+### Runtime flow
+1. User enters cognitive test scores
+2. Scores are preprocessed (direction fixed again)
+3. PCA models compute pillar scores
+4. Scores are converted to percentiles (0–1)
+5. Percentiles are mapped to cognitive levels
+6. Content is adapted using rules
+7. AI generates personalized output
 
-This notebook solves all of that by:
-- Cleaning and normalizing the data
-- Standardizing score direction
-- Combining related test metrics into a single ability score
-- Making the scoring system stable and reusable
-
-The output is a set of **trained measurement models**, not predictions.
-
----
-
-## 🧠 What the System Learns
-
-The notebook trains models for **six cognitive abilities (pillars)**:
-
-1. **Attention**
-2. **Thinking Conversion**
-3. **Information Processing Ability**
-4. **Logical Reasoning**
-5. **Representational Ability**
-6. **Memory**
-
-Each ability is learned **independently**.
-
-That means:
-- Each pillar has its own scaler
-- Its own PCA model
-- Its own reference distribution
-
-This keeps the system modular and explainable.
+No training happens here.
 
 ---
 
-## 📂 Input: What You Need to Run This
+## 9. adaptation_rules.py (Critical File)
 
-### Required
-- One CSV file containing historical cognitive test scores
+This file contains **teaching logic**, not ML.
 
-### Expected data format
-The CSV should include columns such as:
+It answers:
+- How should content change if memory is low?
+- How complex should language be if processing speed is low?
+- How much reasoning depth is appropriate?
 
-- `tca_overall`, `tca_SwitchCost`, `tca_TaskInterference`
-- `ipa_simpleRT`, `ipa_choiceRT`
-- `attention_FlankerEffect`
-- `lra_PercPers`, `lra_PercNonPers`
-- `ra_RTCorrect`, `ra_PercCorrect`
-- `ma_DigitSpan`
+Rules are:
+- deterministic
+- explainable
+- easy to audit
 
-Not every column is used directly, but they should be present if the pillar depends on them.
-
----
-
-## ⚙️ What Happens Inside the Notebook (Step by Step)
-
-### 1️⃣ Load the Dataset
-You upload a CSV file containing raw cognitive test data collected from users.
-
-This data is assumed to be **real human test data**.
+Do NOT replace this with ML unless you know exactly why.
 
 ---
 
-### 2️⃣ Clean the Data
-The notebook:
-- Removes columns that are not needed
-- Fills missing numeric values using the column median
-- Makes sure the dataset is consistent and usable
+## 10. AI Usage (What It Actually Does)
 
-This step prevents garbage input from breaking the models.
+AI is used ONLY for:
+- rewriting content
+- generating explanations
+- producing podcasts
 
----
+AI does NOT:
+- score students
+- decide abilities
+- classify cognition
 
-### 3️⃣ Fix Score Direction (“Higher = Better”)
-Not all cognitive tests work the same way.
-
-Some scores mean:
-- **higher = better** (e.g., accuracy)
-- **lower = better** (e.g., reaction time)
-
-To avoid confusion later, the notebook **inverts all “lower is better” columns** so that:
-
-> Across the entire system, higher values always mean better performance.
-
-This is critical for PCA and percentile scoring to behave correctly.
+AI obeys rules set by the cognitive profile.
 
 ---
 
-### 4️⃣ Generate Synthetic Data (TVAE)
-Real cognitive datasets are often small.
+## 11. Cognitive Index (Optional)
 
-To stabilize learning:
-- A TVAE (Tabular Variational Autoencoder) is trained
-- ~7,500 synthetic samples are generated
-- Synthetic data is merged with real data
+There is an optional composite score (CI).
 
-This does **not fake users**.  
-It simply helps the model understand the overall structure of the data better.
+- Derived AFTER pillar scoring
+- Used for analytics or research
+- NOT required for adaptation
+- Never drives decisions directly
 
 ---
 
-### 5️⃣ Train the Cognitive Pillars
-For each cognitive ability:
+## 12. What NOT to Do (Hard Rules)
 
-1. Relevant columns are selected
-2. Features are standardized using `StandardScaler`
-3. PCA is applied with **1 principal component**
-4. PCA scores are collected
-5. A sorted reference distribution is created
+❌ Do NOT retrain models inside app.py  
+❌ Do NOT use supervised learning  
+❌ Do NOT hardcode thresholds inside PCA logic  
+❌ Do NOT mix training and inference  
+❌ Do NOT guess cognitive meaning from AI output  
 
-PCA is used here to:
-- Combine related test scores
-- Reduce noise
-- Produce a clean, single cognitive score per ability
+If you break these, the system becomes unreliable.
 
 ---
 
-### 6️⃣ Export Model Artifacts
-For each pillar, the notebook saves:
+## 13. Mental Model (If You Remember One Thing)
 
-- `<pillar>_scaler.pkl`  
-- `<pillar>_pca.pkl`  
-- `<pillar>_pc_reference.pkl`  
+Intellia is:
 
-These three files are bundled into a ZIP file and automatically downloaded.
+> A measuring system + teaching rules + AI writing engine
 
-Each ZIP is fully self-contained.
+NOT:
+
+> A prediction model or black-box AI
 
 ---
 
-## 📦 Output: What You Get
+## 14. Where to Start as a New Contributor
 
-After running the notebook, you will have **six ZIP files**, one for each pillar.
+Recommended order:
+1. Read this file
+2. Understand dataset_pca.ipynb
+3. Trace app.py from input → output
+4. Read adaptation_rules.py
+5. Only then touch logic
 
-Example:
+---
+
+## 15. Final Reality Check
+
+If you change something, ask:
+- Does this affect measurement?
+- Does this affect teaching strategy?
+- Does this affect content generation?
+
+Never mix the three.
+
+---
+
+END OF DOCUMENT
