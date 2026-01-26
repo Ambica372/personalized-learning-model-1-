@@ -1,165 +1,194 @@
-# ================================
-# INTELLIA – OFFLINE MODEL TRAINING
-# ================================
+"""
+INTELLIA – SINGLE FILE REFERENCE IMPLEMENTATION
 
-# --- STEP 0: INSTALL DEPENDENCIES ---
-!pip install sdv joblib --quiet
+This script:
+1. Trains cognitive PCA models (offline logic)
+2. Saves model artifacts
+3. Loads them
+4. Scores a student
+5. Applies adaptation rules
+6. Outputs adapted learning instructions
 
+No UI. No Streamlit. Pure logic.
+"""
+
+# =========================
+# IMPORTS
+# =========================
 import pandas as pd
 import numpy as np
 import joblib
-import zipfile
 import os
 
-from google.colab import files
-from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-from sdv.single_table import TVAESynthesizer
-from sdv.metadata import Metadata
+from sklearn.decomposition import PCA
 
 
-# ================================
-# STEP 1: LOAD RAW DATA
-# ================================
+# =========================
+# CONFIG
+# =========================
 
-print("Upload raw cognitive dataset (CSV)")
-uploaded = files.upload()
-file_name = list(uploaded.keys())[0]
-df_raw = pd.read_csv(file_name)
+LOWER_IS_BETTER = {
+    "tca_overall", "tca_SwitchCost", "tca_TaskInterference",
+    "ipa_simpleRT", "ipa_choiceRT",
+    "lra_PercPers", "lra_PercNonPers",
+    "attention_FlankerEffect",
+    "ra_RTCorrect"
+}
 
+PILLARS = {
+    "thinking_conversion": ["tca_overall", "tca_SwitchCost", "tca_TaskInterference"],
+    "information_processing": ["ipa_simpleRT", "ipa_choiceRT"],
+    "logical_reasoning": ["lra_PercPers", "lra_PercNonPers"],
+    "attention": ["attention_FlankerEffect"],
+    "representational": ["ra_RTCorrect", "ra_PercCorrect"],
+    "memory": ["ma_DigitSpan"]
+}
 
-# ================================
-# STEP 2: CLEANING & DIRECTION FIX
-# ================================
-
-cols_to_remove = [
-    'ParticipantName', 'attention_RTCon', 'attention_RTInc',
-    'tca_RepeatTrials', 'tca_SwitchTrials',
-    'tca_Congruent', 'tca_Incongruent',
-    'lra_NumErrors', 'lra_PercErrors',
-    'lra_NumPers', 'lra_NumNonPers'
-]
-
-lower_is_better = [
-    'attention_FlankerEffect',
-    'tca_overall', 'tca_SwitchCost', 'tca_TaskInterference',
-    'ipa_simpleRT', 'ipa_choiceRT',
-    'lra_PercPers', 'lra_PercNonPers',
-    'ra_RTCorrect'
-]
-
-df_raw[lower_is_better] = -df_raw[lower_is_better]
-
-df_cleaned = df_raw.drop(
-    columns=[c for c in cols_to_remove if c in df_raw.columns]
-)
-
-df_cleaned = df_cleaned.fillna(
-    df_cleaned.median(numeric_only=True)
-)
+MODEL_DIR = "models"
+os.makedirs(MODEL_DIR, exist_ok=True)
 
 
-# ================================
-# STEP 3: SYNTHETIC DATA (TVAE)
-# ================================
+# =========================
+# STEP 1 — TRAIN MODELS
+# =========================
 
-print("Synthesizing data...")
-metadata = Metadata.detect_from_dataframe(
-    data=df_cleaned,
-    table_name='cognitive_data'
-)
+def train_models(df):
+    print("Training cognitive models...")
 
-tvae = TVAESynthesizer(metadata, epochs=1000)
-tvae.fit(df_cleaned)
-df_synth = tvae.sample(num_rows=7500)
+    for pillar, cols in PILLARS.items():
+        X = df[cols].copy()
 
-df_master = pd.concat(
-    [df_cleaned, df_synth],
-    ignore_index=True
-)
+        # Direction fix
+        for c in cols:
+            if c in LOWER_IS_BETTER:
+                X[c] = -X[c]
 
+        scaler = StandardScaler()
+        Xs = scaler.fit_transform(X)
 
-# ================================
-# STEP 4: PILLAR TRAINING FUNCTION
-# ================================
+        pca = PCA(n_components=1)
+        pc_scores = pca.fit_transform(Xs).flatten()
 
-def train_pillar(df, cols, name):
-    print(f"\nTraining pillar: {name}")
+        pc_sorted = np.sort(pc_scores)
 
-    X = df[cols]
-    scaler = StandardScaler()
-    Xs = scaler.fit_transform(X)
+        joblib.dump(scaler, f"{MODEL_DIR}/{pillar}_scaler.pkl")
+        joblib.dump(pca, f"{MODEL_DIR}/{pillar}_pca.pkl")
+        joblib.dump(pc_sorted, f"{MODEL_DIR}/{pillar}_pc_reference.pkl")
 
-    pca = PCA(n_components=1)
-    pc_scores = pca.fit_transform(Xs).flatten()
-
-    # Percentile reference
-    pc_sorted = np.sort(pc_scores)
-
-    # Save artifacts
-    joblib.dump(scaler, f"{name}_scaler.pkl")
-    joblib.dump(pca, f"{name}_pca.pkl")
-    joblib.dump(pc_sorted, f"{name}_pc_reference.pkl")
-
-    # Zip artifacts
-    zip_name = f"{name}_artifacts.zip"
-    with zipfile.ZipFile(zip_name, "w") as z:
-        z.write(f"{name}_scaler.pkl")
-        z.write(f"{name}_pca.pkl")
-        z.write(f"{name}_pc_reference.pkl")
-
-    files.download(zip_name)
-
-    # Cleanup
-    os.remove(f"{name}_scaler.pkl")
-    os.remove(f"{name}_pca.pkl")
-    os.remove(f"{name}_pc_reference.pkl")
+    print("Training complete.\n")
 
 
-# ================================
-# STEP 5: TRAIN ALL 6 PILLARS
-# ================================
+# =========================
+# STEP 2 — SCORING
+# =========================
 
-train_pillar(
-    df_master,
-    ['tca_overall', 'tca_SwitchCost', 'tca_TaskInterference'],
-    'thinking_conversion'
-)
+def score_pillar(raw, pillar):
+    cols = PILLARS[pillar]
 
-train_pillar(
-    df_master,
-    ['ipa_simpleRT', 'ipa_choiceRT'],
-    'information_processing_ability'
-)
+    scaler = joblib.load(f"{MODEL_DIR}/{pillar}_scaler.pkl")
+    pca = joblib.load(f"{MODEL_DIR}/{pillar}_pca.pkl")
+    pc_sorted = joblib.load(f"{MODEL_DIR}/{pillar}_pc_reference.pkl")
 
-train_pillar(
-    df_master,
-    ['lra_PercPers', 'lra_PercNonPers'],
-    'logical_reasoning'
-)
+    df = pd.DataFrame([raw])[cols]
 
-train_pillar(
-    df_master,
-    ['attention_FlankerEffect'],
-    'attention'
-)
+    for c in cols:
+        if c in LOWER_IS_BETTER:
+            df[c] = -df[c]
 
-train_pillar(
-    df_master,
-    ['ra_RTCorrect', 'ra_PercCorrect'],
-    'representational_ability'
-)
+    Xs = scaler.transform(df)
+    raw_pc = pca.transform(Xs)[0][0]
 
-train_pillar(
-    df_master,
-    ['ma_DigitSpan'],
-    'memory'
-)
+    percentile = np.searchsorted(pc_sorted, raw_pc, side="right") / len(pc_sorted)
+    return round(float(percentile), 3)
 
 
-# ================================
-# DONE
-# ================================
+def score_student(raw_scores):
+    profile = {}
+    for pillar in PILLARS:
+        profile[pillar] = score_pillar(raw_scores, pillar)
+    return profile
 
-print("\nALL MODELS TRAINED AND DOWNLOADED.")
-print("Use the ZIP files directly in app.py /models/")
+
+# =========================
+# STEP 3 — ADAPTATION RULES
+# =========================
+
+def level(score):
+    if score < 0.2: return "very_low"
+    if score < 0.4: return "low"
+    if score < 0.6: return "medium"
+    if score < 0.8: return "high"
+    return "very_high"
+
+
+def generate_adaptation(profile):
+    instructions = []
+
+    if level(profile["information_processing"]) in ["very_low", "low"]:
+        instructions.append("Use simple language and short sentences.")
+
+    if level(profile["memory"]) in ["very_low", "low"]:
+        instructions.append("Repeat key ideas and add summaries.")
+
+    if level(profile["attention"]) in ["very_low", "low"]:
+        instructions.append("Break content into short chunks.")
+
+    if level(profile["logical_reasoning"]) in ["high", "very_high"]:
+        instructions.append("Include deeper explanations and reasoning.")
+
+    if level(profile["representational"]) in ["high", "very_high"]:
+        instructions.append("Encourage diagrams or mental visuals.")
+
+    return instructions
+
+
+# =========================
+# STEP 4 — DEMO RUN
+# =========================
+
+if __name__ == "__main__":
+
+    # ---------- FAKE TRAINING DATA ----------
+    np.random.seed(42)
+    train_df = pd.DataFrame({
+        "tca_overall": np.random.normal(50, 10, 120),
+        "tca_SwitchCost": np.random.normal(30, 5, 120),
+        "tca_TaskInterference": np.random.normal(25, 5, 120),
+        "ipa_simpleRT": np.random.normal(400, 50, 120),
+        "ipa_choiceRT": np.random.normal(550, 60, 120),
+        "lra_PercPers": np.random.uniform(0, 40, 120),
+        "lra_PercNonPers": np.random.uniform(0, 30, 120),
+        "attention_FlankerEffect": np.random.normal(45, 10, 120),
+        "ra_RTCorrect": np.random.normal(500, 80, 120),
+        "ra_PercCorrect": np.random.uniform(70, 100, 120),
+        "ma_DigitSpan": np.random.randint(3, 9, 120),
+    })
+
+    train_models(train_df)
+
+    # ---------- SAMPLE STUDENT ----------
+    student = {
+        "tca_overall": 55,
+        "tca_SwitchCost": 28,
+        "tca_TaskInterference": 22,
+        "ipa_simpleRT": 480,
+        "ipa_choiceRT": 620,
+        "lra_PercPers": 35,
+        "lra_PercNonPers": 20,
+        "attention_FlankerEffect": 60,
+        "ra_RTCorrect": 520,
+        "ra_PercCorrect": 85,
+        "ma_DigitSpan": 6,
+    }
+
+    profile = score_student(student)
+    instructions = generate_adaptation(profile)
+
+    print("COGNITIVE PROFILE")
+    for k, v in profile.items():
+        print(f"- {k}: {v}")
+
+    print("\nADAPTATION INSTRUCTIONS")
+    for i in instructions:
+        print("-", i)
