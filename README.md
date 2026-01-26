@@ -1,4 +1,4 @@
-# 🧠 Intellia – Cognitive Model Training (Google Colab)
+# 🧠 Intellia – Cognitive Model Training 
 
 This notebook is used to **train the cognitive scoring models** that power Intellia.
 
